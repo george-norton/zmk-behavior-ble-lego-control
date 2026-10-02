@@ -1,0 +1,8 @@
+# Copyright (c) 2025, George Norton
+# SPDX-License-Identifier: MIT
+
+description: Provides an interface for pairing with LEGO hubs.
+
+compatible: "zmk,behavior-ble-lego-hub"
+
+include: one_param.yaml

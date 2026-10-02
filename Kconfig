@@ -1,0 +1,16 @@
+DT_COMPAT_ZMK_BLE_LEGO_HUB := zmk,behavior-ble-lego-hub
+
+config ZMK_BEHAVIOR_BLE_LEGO_HUB
+    bool
+    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_BLE_LEGO_HUB))
+    imply BT_CENTRAL
+    imply BT_GATT_CLIENT
+
+DT_COMPAT_ZMK_BLE_LEGO_MOTOR_CONTROL := zmk,behavior-ble-lego-motor-control
+
+config ZMK_BEHAVIOR_BLE_LEGO_MOTOR_CONTROL
+    bool
+    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_BLE_LEGO_MOTOR_CONTROL))
+    depends on BT_CENTRAL
+    depends on BT_GATT_CLIENT
+    depends on BT_HCI_HOST

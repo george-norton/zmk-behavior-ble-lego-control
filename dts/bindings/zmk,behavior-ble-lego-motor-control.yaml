@@ -1,0 +1,17 @@
+# Copyright (c) 2025, George Norton
+# SPDX-License-Identifier: MIT
+
+description: Provides an interface for controlling LEGO hubs.
+
+compatible: "zmk,behavior-ble-lego-motor-control"
+
+include: one_param.yaml
+
+properties:
+  speed:
+    required: true
+    type: int
+    description: The new motor speed or relative speed adjustment
+  relative:
+    type: boolean
+    description: If enabled the speed adjustment is relative rather than absolute
