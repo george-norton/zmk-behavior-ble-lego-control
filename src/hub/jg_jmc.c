@@ -43,14 +43,20 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 	struct bt_gatt_service_val *svc_attr = attr ? attr->user_data : NULL;
 	static char service_uuid_str[BT_UUID_STR_LEN] = {};
 	static char attr_uuid_str[BT_UUID_STR_LEN] = {};
+	jg_jmc_hub_t *jg_jmc_hub = CONTAINER_OF(params, jg_jmc_hub_t, discover_params);
+	hub_t *hub = CONTAINER_OF(jg_jmc_hub, hub_t, jg_jmc_hub);
+
 	LOG_INF("find_handles (%d %d) %d", params ? params->start_handle : 0,
 		params ? params->end_handle : 0, attr ? attr->handle : 0);
 
 	if (!attr) {
-		LOG_INF("Discover complete\n");
+		if (!hub->discovered) {
+			// We failed to discover the motor control descriptor. So disconect.
+			// Perhaps we could retry discovery instead?
+			bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		}
 		return BT_GATT_ITER_STOP;
 	}
-	jg_jmc_hub_t *hub = CONTAINER_OF(params, jg_jmc_hub_t, discover_params);
 
 	bt_uuid_to_str(attr->uuid, attr_uuid_str, BT_UUID_STR_LEN);
 	if (svc_attr) {
@@ -65,11 +71,13 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 			memcpy(&uuid, JG_JMC_CHARACTERISTIC, sizeof(uuid));
 			params->uuid = &uuid.uuid;
 			params->type = BT_GATT_DISCOVER_CHARACTERISTIC;
+			params->start_handle = attr->handle + 1;
+			params->end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
 			LOG_INF("Look for characteristic..");
 
 			bt_gatt_discover(conn, params);
 
-			return BT_GATT_ITER_CONTINUE;
+			return BT_GATT_ITER_STOP;
 		}
 		break;
 	}
@@ -80,35 +88,46 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 			LOG_INF("Look for descriptor..");
 			params->uuid = NULL;
 			params->type = BT_GATT_DISCOVER_DESCRIPTOR;
+			params->start_handle = attr->handle + 1;
+			params->end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
 			LOG_INF("Look for characteristic..");
 
 			bt_gatt_discover(conn, params);
 
-			return BT_GATT_ITER_CONTINUE;
+			return BT_GATT_ITER_STOP;
 		}
 		break;
 	}
 	case BT_GATT_DISCOVER_DESCRIPTOR: {
 		LOG_INF("    DES %04x. UUID %s", attr ? attr->handle : -1, attr_uuid_str);
-		hub->output_command_handle = attr->handle;
-		return BT_GATT_ITER_CONTINUE;
+		jg_jmc_hub->output_command_handle = attr->handle;
+		hub->discovered = true;
+		break;
 	}
 	default:
 		break;
+	}
+	if (!hub->discovered) {
+		// We failed to discover the motor control descriptor. So disconect.
+		// Perhaps we could retry discovery instead?
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	}
 	return BT_GATT_ITER_STOP;
 }
 
 void jg_jmc_service_discovery(hub_t *hub)
 {
-	hub->powered_up_hub.discover_params.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE;
-	hub->powered_up_hub.discover_params.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
-	hub->powered_up_hub.discover_params.type = BT_GATT_DISCOVER_PRIMARY;
+	hub->jg_jmc_hub.discover_params.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE;
+	hub->jg_jmc_hub.discover_params.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
+	hub->jg_jmc_hub.discover_params.type = BT_GATT_DISCOVER_PRIMARY;
 	memcpy(&uuid, JG_JMC_SERVICE, sizeof(uuid));
-	hub->powered_up_hub.discover_params.uuid = &uuid.uuid;
-	hub->powered_up_hub.discover_params.func = find_handles;
+	hub->jg_jmc_hub.discover_params.uuid = &uuid.uuid;
+	hub->jg_jmc_hub.discover_params.func = find_handles;
 
-	bt_gatt_discover(hub->conn, &(hub->powered_up_hub.discover_params));
+	if (bt_gatt_discover(hub->conn, &(hub->jg_jmc_hub.discover_params))) {
+		// Queue full. Consider delaying discovery, but for now disconnect.
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	}
 }
 
 static volatile uint8_t motor_state[4] = {};

@@ -37,14 +37,19 @@ bool is_wedo_hub(struct net_buf_simple *ad, hub_t *hub)
 static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			    struct bt_gatt_discover_params *params)
 {
-	if (!attr) {
-		return BT_GATT_ITER_STOP;
-	}
 	struct bt_gatt_service_val *svc_attr = attr ? attr->user_data : NULL;
 	char service_uuid_str[BT_UUID_STR_LEN] = {};
 	char attr_uuid_str[BT_UUID_STR_LEN] = {};
-	wedo_hub_t *hub = CONTAINER_OF(params, wedo_hub_t, discover_params);
-
+	wedo_hub_t *wedo_hub = CONTAINER_OF(params, wedo_hub_t, discover_params);
+	hub_t *hub = CONTAINER_OF(wedo_hub, hub_t, wedo_hub);
+	if (!attr) {
+		if (!hub->discovered) {
+			// We failed to discover the motor control descriptor. So disconect.
+			// Perhaps we could retry discovery instead?
+			bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		}
+		return BT_GATT_ITER_STOP;
+	}
 	bt_uuid_to_str(attr->uuid, attr_uuid_str, BT_UUID_STR_LEN);
 	bt_uuid_to_str(svc_attr->uuid, service_uuid_str, BT_UUID_STR_LEN);
 
@@ -72,11 +77,17 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 	}
 	case BT_GATT_DISCOVER_DESCRIPTOR: {
 		LOG_INF("    DES %04x. UUID %s", attr ? attr->handle : -1, attr_uuid_str);
-		hub->output_command_handle = attr->handle;
+		wedo_hub->output_command_handle = attr->handle;
+		hub->discovered = true;
 		return BT_GATT_ITER_CONTINUE;
 	}
 	default:
 		break;
+	}
+	if (!hub->discovered) {
+		// We failed to discover the motor control descriptor. So disconect.
+		// Perhaps we could retry discovery instead?
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	}
 	return BT_GATT_ITER_STOP;
 }
@@ -91,7 +102,11 @@ void wedo_service_discovery(hub_t *hub)
 	hub->wedo_hub.discover_params.func = find_handles;
 	LOG_INF("WeDo Hub %p Params %p %p", &(hub->wedo_hub), &(hub->wedo_hub.discover_params),
 		&(hub->wedo_hub.port_type_subscription_params));
-	bt_gatt_discover(hub->conn, &(hub->wedo_hub.discover_params));
+
+	if (bt_gatt_discover(hub->conn, &(hub->wedo_hub.discover_params))) {
+		// Queue full. Consider delaying discovery, but for now disconnect.
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	}
 }
 
 void wedo_set_motor_speed(hub_t *hub, uint8_t port, int8_t speed)

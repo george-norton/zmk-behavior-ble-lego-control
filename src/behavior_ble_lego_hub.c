@@ -9,16 +9,10 @@
 #include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 #include <zmk/behavior.h>
-#include <zephyr/drivers/gpio.h>
 #include "hub/discover.h"
 #include <dt-bindings/behavior_ble_lego_hub.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
-
-#if DT_HAS_ALIAS(led0)
-#define LED_NODE DT_ALIAS(led0)
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED_NODE, gpios);
-#endif
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -46,9 +40,6 @@ static const struct behavior_parameter_metadata metadata = {
 
 static int behavior_ble_lego_hub_init(const struct device *dev)
 {
-#if DT_HAS_ALIAS(led0)
-	gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
-#endif
 	return 0;
 };
 

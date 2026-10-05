@@ -86,12 +86,18 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 	struct bt_gatt_service_val *svc_attr = attr ? attr->user_data : NULL;
 	static char service_uuid_str[BT_UUID_STR_LEN] = {};
 	static char attr_uuid_str[BT_UUID_STR_LEN] = {};
+	powered_up_hub_t *powered_up_hub = CONTAINER_OF(params, powered_up_hub_t, discover_params);
+	hub_t *hub = CONTAINER_OF(powered_up_hub, hub_t, powered_up_hub);
 
 	if (!attr) {
-		LOG_INF("Discover complete\n");
+		if (!hub->discovered) {
+			// We failed to discover the motor control descriptor. So disconect.
+			// Perhaps we could retry discovery instead?
+			bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		}
 		return BT_GATT_ITER_STOP;
 	}
-	powered_up_hub_t *hub = CONTAINER_OF(params, powered_up_hub_t, discover_params);
+
 	LOG_INF("find_handles (%d %d) %d", params ? params->start_handle : 0,
 		params ? params->end_handle : 0, attr ? attr->handle : 0);
 
@@ -122,7 +128,8 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 			attr_uuid_str);
 		if (!bt_uuid_cmp(svc_attr->uuid, LEGO_HUB_CHARACTERISTIC)) {
 			LOG_INF("Lego hub handle %p %p %04x", hub, params, attr->handle);
-			hub->output_command_handle = attr->handle + 1;
+			powered_up_hub->output_command_handle = attr->handle + 1;
+			hub->discovered = true;
 		}
 		break;
 	}
@@ -133,6 +140,11 @@ static uint8_t find_handles(struct bt_conn *conn, const struct bt_gatt_attr *att
 	}
 	default:
 		break;
+	}
+	if (!hub->discovered) {
+		// We failed to discover the motor control descriptor. So disconect.
+		// Perhaps we could retry discovery instead?
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	}
 	return BT_GATT_ITER_STOP;
 }
@@ -146,7 +158,10 @@ void powered_up_service_discovery(hub_t *hub)
 	hub->powered_up_hub.discover_params.uuid = &uuid.uuid;
 	hub->powered_up_hub.discover_params.func = find_handles;
 
-	bt_gatt_discover(hub->conn, &(hub->powered_up_hub.discover_params));
+	if (bt_gatt_discover(hub->conn, &(hub->powered_up_hub.discover_params))) {
+		// Queue full. Consider delaying discovery, but for now disconnect.
+		bt_conn_disconnect(hub->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	}
 }
 
 void powered_up_set_motor_speed(hub_t *hub, uint8_t port, int8_t speed)

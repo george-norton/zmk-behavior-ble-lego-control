@@ -2,7 +2,7 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
 #include "discover.h"
 #include "hub.h"
 #include "wedo2.h"
@@ -16,14 +16,15 @@ static K_MUTEX_DEFINE(discover_mutex);
 
 #if DT_HAS_ALIAS(led0)
 #define BLINK_DURATION_MS 500
+#define BLINK_BRIGHTNESS  50
 #define LED_NODE          DT_ALIAS(led0)
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED_NODE, gpios);
+static const struct led_dt_spec led0 = LED_DT_SPEC_GET(LED_NODE);
 
 static int blink_count = 0;
 static void led_blink_fn(struct k_timer *timer_id)
 {
 	if (blink_count) {
-		gpio_pin_toggle_dt(&led);
+		led_set_brightness_dt(&led0, blink_count % 2 ? BLINK_BRIGHTNESS : 0);
 		blink_count--;
 	} else {
 		k_timer_stop(timer_id);
@@ -31,7 +32,7 @@ static void led_blink_fn(struct k_timer *timer_id)
 }
 static void led_stop_fn(struct k_timer *timer_id)
 {
-	gpio_pin_set_dt(&led, 0);
+	led_off_dt(&led0);
 }
 K_TIMER_DEFINE(blink_timer, led_blink_fn, led_stop_fn);
 #endif
@@ -144,7 +145,6 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 					break;
 				}
 			}
-			hubs[i].discovered = true;
 			return;
 		}
 	}
